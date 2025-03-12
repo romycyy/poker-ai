@@ -1,0 +1,22 @@
+1. implement poker tree traversal
+2. simplify pluribus agent
+3. implement agent
+4. adjust based on rules and feedback
+
+03/12/2025
+poker tree traversal
+    action abstraction
+        - bet size
+            finer in the preflop
+            coarser in flop/turn/river
+    information set abstraction
+        - preflop: 
+            suit/offsuit + rank
+            use EHS to encode rank
+        - flop/turn/river:
+            cluster all hands into 200 buckets
+        
+
+Can we use EHS as heuristic function for prior
+
+detect/counter EHS        
