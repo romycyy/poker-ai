@@ -40,6 +40,11 @@ class Card:
     def __repr__(self):
         return f"{self.rank.value}{self.suit.value}"
 
+    def __eq__(self, other):
+        if isinstance(other, Card):
+            return self.rank == other.rank and self.suit == other.suit
+        return False
+
 
 class ActionType(Enum):
     FOLD = "fold"
@@ -120,6 +125,9 @@ class Player:
     def set_last_action_amount(self, last_action_amount: int):
         self.last_action_amount = last_action_amount
 
+    def add_stack(self, amount: int):
+        self.stack += amount    
+
     def get_stack(self):
         return self.stack
 
@@ -142,6 +150,9 @@ class Player:
         return self.strategy(history)
 
     def make_actions(self, action: Action) -> int:
+        if self.on_board is False:
+            raise ValueError("Player is not on board")
+
         if action.action_type == ActionType.FOLD:
             self.on_board = False
             return 0
@@ -152,12 +163,11 @@ class Player:
                 raise ValueError("Cannot bet less than the current bet")
 
             amount_to_pay = action.amount - self.last_action_amount
-            if amount_to_pay > self.stack:
+            if amount_to_pay >= self.stack:
                 # All-in case
                 amount_to_pay = self.stack
                 self.is_all_in = True
-                action.all_in = True
-                action.amount = self.last_action_amount + amount_to_pay
+                assert action.all_in is True
             elif amount_to_pay < 0:
                 raise ValueError("Invalid bet amount")
 
@@ -226,7 +236,7 @@ class GameNode:
         self.pot_size = pot_size
         self.call_amount = call_amount
         self.stage = stage
-        self.community_cards = community_cards or []
+        self.community_cards = community_cards
         self.side_pots = [SidePot(pot_size)]  # Main pot is first
         self.current_bet_per_player = {}  # Track bets for side pot calculation
 
@@ -295,8 +305,8 @@ class GameNode:
                         eligible_count += 1
 
                 if (
-                    pot.amount > 0 and eligible_count > 1
-                ):  # Only create pot if multiple players eligible
+                    pot.amount > 0
+                ):  # Only create pot if pot has money
                     self.side_pots.append(pot)
 
                 previous_bet = current_bet
