@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Optional, Dict
 from enum import Enum
 import random
 
@@ -71,14 +71,23 @@ class Action:
     """
 
     def __init__(
-        self, action_type: ActionType, amount: Union[int, float], all_in: bool = False
+        self,
+        action_type: ActionType,
+        amount: int,
+        all_in: Optional[bool] = None,
     ):
         self.action_type = action_type
         self.amount = amount
-        self.all_in = all_in
+        if all_in is None:
+            self.all_in = False
+        else:
+            self.all_in = all_in
 
     def __repr__(self):
         return f"<Action action_type={self.action_type}, amount={self.amount}, all_in={self.all_in}>"
+
+    def get_amount(self) -> int:
+        return self.amount
 
 
 class History:
@@ -93,11 +102,17 @@ class History:
 
 
 class Player:
-    def __init__(self, dealer: bool = False, stack: int = 0):
-        self.stack: int = stack
-        self.cards: List[Card] = None
+    def __init__(self, stack: Optional[int] = None, dealer: Optional[bool] = None):
+        if stack is None:
+            self.stack = 0
+        else:
+            self.stack = stack
+        self.cards: Optional[List[Card]] = None
         self.pos: int = 0
-        self.dealer: bool = dealer
+        if dealer is None:
+            self.dealer = False
+        else:
+            self.dealer = dealer
         self.on_board: bool = False
         self.last_action_amount: int = 0
         self.has_acted: bool = False
@@ -126,7 +141,7 @@ class Player:
         self.last_action_amount = last_action_amount
 
     def add_stack(self, amount: int):
-        self.stack += amount    
+        self.stack += amount
 
     def get_stack(self):
         return self.stack
@@ -186,9 +201,12 @@ class Player:
 class SidePot:
     """Represents a side pot in the game with its eligible players"""
 
-    def __init__(self, amount: int = 0):
+    def __init__(self, amount: int = 0, players: Optional[List[int]] = None):
         self.amount: int = amount
-        self.eligible_players: List[int] = []  # List of player positions
+        if players is None:
+            self.eligible_players: List[int] = []
+        else:
+            self.eligible_players = players
 
     def __repr__(self):
         return (
@@ -215,33 +233,29 @@ class GameNode:
         self,
         player_to_act: Player,
         player_pos: int,
-        pot_size: int = 0,
-        call_amount: int = 0,
-        stage: Stage = None,
-        community_cards: List[Card] = None,
-        onboard_players: List[int] = [],
+        pot_size: int,
+        call_amount: int,
+        stage: Optional[Stage] = None,
+        community_cards: Optional[List[Card]] = None,
+        onboard_players: Optional[List[int]] = None,
     ):
         if pot_size < 0:
             raise ValueError("Pot size cannot be negative")
         if call_amount < 0:
             raise ValueError("Call amount cannot be negative")
-        if not isinstance(onboard_players, list):
-            raise ValueError("onboard_players must be a list")
-
+        if onboard_players is None:
+            self.onboard_players: List[int] = []
+        else:
+            self.onboard_players = onboard_players.copy()
         self.player_to_act = player_to_act
         self.player_pos = player_pos
-        self.onboard_players = (
-            onboard_players.copy()
-        )  # Make a copy to prevent external modifications
         self.pot_size = pot_size
         self.call_amount = call_amount
         self.stage = stage
         self.community_cards = community_cards
-        self.side_pots = [SidePot(pot_size)]  # Main pot is first
-        self.current_bet_per_player = {}  # Track bets for side pot calculation
 
     def __repr__(self):
-        return f"<GameNode player={self.player_to_act}, onboard_players={self.onboard_players}, call_amount={self.call_amount}, pot_size={self.pot_size}, stage={self.stage}>"
+        return f"<GameNode pos{self.player_pos}, onboard_players={self.onboard_players}, call_amount={self.call_amount}, pot_size={self.pot_size}>"
 
     def get_player_to_act(self):
         return self.player_to_act
@@ -269,57 +283,46 @@ class GameNode:
 
     def calculate_side_pots(self, players: List[Player]):
         """Recalculate side pots when a player goes all-in"""
-        # Reset current bets tracking
-        self.current_bet_per_player = {
-            pos: player.get_total_bet()
-            for pos, player in enumerate(players)
-            if pos in self.onboard_players
+        total_bet_per_player = {
+            pos: player.get_total_bet() for pos, player in enumerate(players)
         }
-
-        if not self.current_bet_per_player:
-            return  # No players to create pots for
-
+        print(total_bet_per_player)
         # Sort players by their total bet amount
         sorted_players = sorted(
-            [(pos, players[pos]) for pos in self.onboard_players],
+            [(pos, player) for pos, player in enumerate(players)],
             key=lambda x: x[1].get_total_bet(),
         )
-
+        print(sorted_players)
         # Reset side pots
         self.side_pots = []
-        previous_bet = 0
 
         # Calculate each side pot
         for pos, player in sorted_players:
-            current_bet = player.get_total_bet()
-            if current_bet > previous_bet:
+            current_bet = total_bet_per_player[pos]
+            print(f"current_bet: {current_bet}")
+            if current_bet > 0:
                 pot = SidePot()
-                contribution = current_bet - previous_bet
+                print(f"initial pot: {pot}, pos: {pos}")
+                contribution = current_bet
 
                 # Add eligible players and their contributions
-                eligible_count = 0
-                for other_pos in self.onboard_players:
-                    if self.current_bet_per_player[other_pos] >= current_bet:
-                        pot.add_eligible_player(other_pos)
+                for pos, player in enumerate(players):
+                    if total_bet_per_player[pos] >= current_bet:
+                        print(
+                            f"pos: {pos}, total_bet_per_player[pos]: {total_bet_per_player[pos]}"
+                        )
                         pot.add_amount(contribution)
-                        eligible_count += 1
-
-                if (
-                    pot.amount > 0
-                ):  # Only create pot if pot has money
+                        total_bet_per_player[pos] -= contribution
+                        if player.get_on_board():
+                            pot.add_eligible_player(pos)
+                    print(f"pot: {pot}")
+                if pot.amount > 0:  # Only create pot if pot has money
                     self.side_pots.append(pot)
-
-                previous_bet = current_bet
+                print(f"side_pots: {self.side_pots}")
 
         # If no side pots were created, create main pot
         if not self.side_pots:
-            main_pot = SidePot()
-            for pos in self.onboard_players:
-                main_pot.add_eligible_player(pos)
-                main_pot.add_amount(self.current_bet_per_player[pos])
-            self.side_pots.append(main_pot)
-
-    def get_side_pots(self):
+            raise ValueError("No side pots were created")
         return self.side_pots
 
 
@@ -367,9 +370,9 @@ class HandEvaluator:
         return HandRank.HIGH_CARD, [], []
 
     @staticmethod
-    def _get_rank_counts(cards: List[Card]) -> dict:
+    def _get_rank_counts(cards: List[Card]) -> Dict[Rank, int]:
         """Helper method to count occurrences of each rank"""
-        rank_counts = {}
+        rank_counts: Dict[Rank, int] = {}
         for card in cards:
             rank_counts[card.rank] = rank_counts.get(card.rank, 0) + 1
         return rank_counts
@@ -532,7 +535,9 @@ class HandEvaluator:
     def _check_straight(cards: List[Card]):
         """Check for a straight (five sequential cards of any suit)"""
         # Sort cards by rank
-        sorted_cards = sorted(cards, key=lambda x: list(Rank).index(x.rank))
+        sorted_cards = sorted(
+            cards, key=lambda x: list(Rank).index(x.rank), reverse=True
+        )
 
         # Remove duplicates while preserving order
         unique_ranks = []
@@ -546,8 +551,8 @@ class HandEvaluator:
         for i in range(len(unique_ranks) - 4):
             straight = unique_ranks[i : i + 5]
             if all(
-                list(Rank).index(straight[j + 1].rank)
-                - list(Rank).index(straight[j].rank)
+                list(Rank).index(straight[j].rank)
+                - list(Rank).index(straight[j + 1].rank)
                 == 1
                 for j in range(len(straight) - 1)
             ):
@@ -614,20 +619,25 @@ class HandEvaluator:
 
         # Compare hand ranks first
         if rank1.value > rank2.value:
+            # print(f"rank1: {rank1}, rank2: {rank2}")
             return 1
         elif rank1.value < rank2.value:
             return -1
 
+        # main1 = sorted(main1, key=lambda x: list(Rank).index(x.rank), reverse=True)
+        # main2 = sorted(main2, key=lambda x: list(Rank).index(x.rank), reverse=True)
         # If ranks are equal, compare main cards
         for card1, card2 in zip(main1, main2):
             rank_diff = list(Rank).index(card1.rank) - list(Rank).index(card2.rank)
             if rank_diff != 0:
+                # print(f"rank_diff: {rank_diff}")
                 return 1 if rank_diff > 0 else -1
 
         # If main cards are equal, compare kickers
         for card1, card2 in zip(kickers1 or [], kickers2 or []):  # Handle None kickers
             rank_diff = list(Rank).index(card1.rank) - list(Rank).index(card2.rank)
             if rank_diff != 0:
+                # print(f"rank_diff: {rank_diff}")
                 return 1 if rank_diff > 0 else -1
 
         # If all cards are equal or no more kickers to compare
@@ -652,12 +662,12 @@ class GameTree:
         self.big_blind: int = big_blind
         self.players: List[Player] = players
 
-        self.dealer: Player = None
-        self.history: History = None
+        self.dealer: Player = Player(dealer=True)
+        self.history: History = History([])
         self.deck: List[Card] = [Card(rank, suit) for rank in Rank for suit in Suit]
 
     def get_current_history(self):
-        return self.history.get_history()[-1]
+        return self.history.get_history()
 
     def start_game(self):
         # assert all players have enough stack to call
@@ -666,8 +676,6 @@ class GameTree:
                 raise ValueError("Player has insufficient stack")
         if self.history is not None:
             raise ValueError("Game already started")
-        self.history = History([])
-        self.dealer = Player(dealer=True)
         current_stage = Stage.PRE_FLOP
         self.history.append(
             GameNode(
@@ -727,8 +735,8 @@ class GameTree:
         onboard_players = cur_node.get_onboard_players()
         if cur_node.check_if_terminal():
             return False
-        # check if all players reached the call amount, if so, go to dealer move
 
+        # Check if all players reached the call amount
         flag = False
         for player_pos in onboard_players:
             player = self.players[player_pos]
@@ -739,13 +747,13 @@ class GameTree:
                 player.get_last_action_amount() < cur_node.get_call_amount()
                 and player.get_stack() > 0
             ):
-                # player needs to call and player has not allin
                 flag = True
                 break
-
+        # if there is only one player left, skip player move
+        if len(onboard_players) == 1:
+            flag = False
         if flag:
-            # player move
-
+            # Player move logic
             # skip players who have folded
             current_pos = (current_pos + 1) % len(self.players)
             player = self.players[current_pos]
@@ -766,34 +774,29 @@ class GameTree:
                 pot_size += amount
             elif action.action_type == ActionType.FOLD:
                 onboard_players.remove(player_pos)
-            if len(onboard_players) == 1:
-                new_node = GameNode(
-                    player_to_act=None,
-                    player_pos=-1,
-                    pot_size=pot_size,
-                    call_amount=0,
-                    stage=Stage.SHOWDOWN,
-                )
-            else:
-                new_node = GameNode(
-                    player_to_act=player,
-                    player_pos=current_pos,
-                    pot_size=pot_size,
-                    call_amount=call_amount,
-                    stage=cur_node.get_stage(),
-                    community_cards=cur_node.get_community_cards(),
-                    onboard_players=onboard_players,
-                )
-            self.history.append(new_node, action)
-
-            # After player makes action, check if they went all-in
             if action.all_in:
-                # Recalculate side pots
-                new_node.calculate_side_pots(self.players)
-
+                onboard_players.remove(player_pos)
+            # if len(onboard_players) == 1:
+            #     new_node = GameNode(
+            #         player_to_act=None,
+            #         player_pos=-1,
+            #         pot_size=pot_size,
+            #         call_amount=0,
+            #         stage=Stage.SHOWDOWN,
+            #     )
+            new_node = GameNode(
+                player_to_act=player,
+                player_pos=current_pos,
+                pot_size=pot_size,
+                call_amount=call_amount,
+                stage=cur_node.get_stage(),
+                community_cards=cur_node.get_community_cards(),
+                onboard_players=onboard_players,
+            )
+            self.history.append(new_node, action)
             return True
         else:
-            # dealer move
+            # Dealer move logic
             # Dealer deals community cards based on stage
             stage = cur_node.get_stage()
             community_cards = cur_node.community_cards
@@ -801,6 +804,12 @@ class GameTree:
                 player = self.players[player_pos]
                 player.set_last_action_amount(0)
                 player.set_has_acted(False)
+
+            # Change all all-in players to be off-board
+            for player in self.players:
+                if player.get_is_all_in() and player.get_on_board():
+                    player.set_on_board(False)
+
             if stage == Stage.PRE_FLOP:
                 community_cards = [self.deck.pop() for _ in range(3)]
                 new_node = GameNode(
@@ -836,7 +845,7 @@ class GameTree:
                 )
             elif stage == Stage.RIVER:
                 new_node = GameNode(
-                    player_to_act=None,
+                    player_to_act=self.dealer,
                     player_pos=-1,
                     pot_size=cur_node.get_pot_size(),
                     call_amount=0,
@@ -849,8 +858,9 @@ class GameTree:
 
     def checkout(self):
         if self.history.get_history()[-1][0].get_stage() == Stage.SHOWDOWN:
+            # Calculate side pots
             final_node = self.history.get_history()[-1][0]
-            side_pots = final_node.get_side_pots()
+            side_pots = final_node.calculate_side_pots(self.players)
             community_cards = final_node.get_community_cards()
 
             # For each side pot, determine the winner
