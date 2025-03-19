@@ -1,4 +1,4 @@
-from typing import List, Union, Optional, Dict
+from typing import List, Optional, Dict
 from enum import Enum
 import random
 
@@ -96,6 +96,9 @@ class History:
 
     def append(self, game_node: "GameNode", action: Action):
         self.history.append((game_node, action))
+
+    def pop(self):
+        return self.history.pop()
 
     def get_history(self):
         return self.history
@@ -196,6 +199,13 @@ class Player:
 
     def get_total_bet(self):
         return self.total_bet
+    
+    def initialized(self):
+        self.on_board = True
+        self.has_acted = False
+        self.is_all_in = False
+        self.total_bet = 0
+        self.last_action_amount = 0
 
 
 class SidePot:
@@ -674,8 +684,7 @@ class GameTree:
         for player in self.players:
             if player.get_stack() <= 0:
                 raise ValueError("Player has insufficient stack")
-        if self.history is not None:
-            raise ValueError("Game already started")
+        self.history = History([])
         current_stage = Stage.PRE_FLOP
         self.history.append(
             GameNode(
@@ -856,7 +865,7 @@ class GameTree:
             self.history.append(new_node, Action(ActionType.DEAL, 0))
             return True
 
-    def checkout(self):
+    def checkout(self) -> List[int]:
         if self.history.get_history()[-1][0].get_stage() == Stage.SHOWDOWN:
             # Calculate side pots
             final_node = self.history.get_history()[-1][0]
@@ -905,3 +914,5 @@ class GameTree:
                         self.players[first_winner].stack += remainder
         else:
             raise ValueError("Game is not terminal")
+
+

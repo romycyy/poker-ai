@@ -15,6 +15,7 @@ poker tree traversal
             use EHS to encode rank
         - flop/turn/river:
             cluster all hands into 200 buckets
+        - appendix 28
         
 
 Can we use EHS as heuristic function for prior
