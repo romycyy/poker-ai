@@ -1,16 +1,15 @@
 from utils.poker_tree import (
-    Player,
-    Card,
     History,
     Action,
-    Rank,
-    Suit,
+    Card,
     GameNode,
     Stage,
     ActionType,
-    HandEvaluator,
+    Rank,
+    Suit,
+    Player,
 )
-from typing import List, Dict
+from typing import List, Dict, Set
 import random
 
 
@@ -19,57 +18,37 @@ class info_element:
         self.actions = actions
 
 
-infoset: Dict[tuple[tuple[Card, Card], History], info_element] = {}
-
-# TODO: need action abstraction and information abstraction for infoset initialization
-# import and combine infor_abstraction
-
-class Pluribus(Player):
-    def __init__(self, stack=10000):
-        super().__init__(stack=stack)
-        self.regrets = {}
-        self.average_strategy = {}
-        self.strategy = {}
-        for key, value in infoset.items():
-            self.regrets[key] = {a: 0.0 for a in value.actions}
-            self.average_strategy[key] = {a: 0.0 for a in value.actions}
-            # Initialize current strategy to uniform
-            self.strategy[key] = {a: 1.0 / len(value.actions) for a in value.actions}
-
-    def strategy(self, history: History):
-        return random.choice(
-            infoset[(self.cards, history)].actions,
-            weights=[
-                self.strategy[(self.cards, history)][a]
-                for a in infoset[(self.cards, history)].actions
-            ],
-        )
+infoset: Set[tuple[tuple[Card, Card], History]] = set()
+actions_i: Dict[tuple[tuple[Card, Card], History], info_element] = {}
 
 
 class PluribusDCFR:
-    def __init__(
-        self,
-        players: List[Pluribus],
-        small_blind: int = 5,
-        big_blind: int = 10,
-        alpha: float = 1.5,
-        beta: float = 0,
-        gamma: float = 2,
-    ):
+    def __init__(self, infosets, alpha=1.5, beta=0, gamma=2):
         """
-        :param players: A list of Pluribus players.
+        :param infosets: A list of infoset objects or IDs in the game.
+        :param alpha: Exponent for discounting positive regrets.
+        :param beta:  Exponent for discounting negative regrets.
+        :param gamma: Exponent for discounting average-strategy contributions.
         """
-        self.players = players
-        self.small_blind: int = small_blind
-        self.big_blind: int = big_blind
-        self.alpha: float = alpha
-        self.beta: float = beta
-        self.gamma: float = gamma
-        self.history: History = History([])
-        self.dealer: Player = Player(dealer=True)
-        self.history: History = History([])
-        self.deck: List[Card] = []
-        self.root: GameNode = GameNode(self.dealer, 0, 0, 0)
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+
+        # Initialize data structures for each infoset I
+        self.regrets = {}
+        self.average_strategy = {}
+        self.strategy = {}
+
+        self.small_blind: int = 5
+        self.big_blind: int = 10
+
+        self.root: GameNode = None
+        self.players: List[Player] = []
+        for I in infosets:
+            self.regrets[I] = {a: 0.0 for a in actions_i[I]}
+            self.average_strategy[I] = {a: 0.0 for a in actions_i[I]}
+            # Initialize current strategy to uniform
+            self.strategy[I] = {a: 1.0 / len(actions_i[I]) for a in actions_i[I]}
 
     def initialize_game(self):
         # assert all players have enough stack to call
@@ -122,10 +101,13 @@ class PluribusDCFR:
         """
         Run DCFR for T iterations, discounting at *every iteration* using alpha, beta, gamma.
         :param T: Number of iterations.
+        :param players: List of players in the game (including self).
         """
         for t in range(1, T + 1):
             # ---- Perform CFR updates (one iteration per player) ----
+
             for p in self.players:
+                self.initialize_game()
                 self.dcfr_traversal(self.root, p, 1.0, 1.0)
 
             # ---- Apply DCFR discounting to regrets and average strategy ----
@@ -162,7 +144,7 @@ class PluribusDCFR:
                 }
         return final_strategy
 
-    def dcfr_traversal(self, h, p, reach_p, reach_opp):
+    def dcfr_traversal(self, h: GameNode, p: Player, reach_p, reach_opp):
         """
         Recursively traverse the game tree to update regrets and average strategy.
         :param h: Current node (history state).
@@ -171,7 +153,8 @@ class PluribusDCFR:
         :param reach_opp: Probability contribution of all other players reaching this node.
         :return: The expected payoff for player p at this node.
         """
-        if h.is_terminal():
+        if h.check_if_terminal():
+            # implement payoff p
             return h.payoff(p)
 
         if h.is_chance_node():
@@ -224,6 +207,7 @@ class PluribusDCFR:
                     self.strategy[opp_infoset][a] = 1.0 / len(self.regrets[opp_infoset])
 
             # Sample an action for the opponent
+            import random
 
             actions = list(self.strategy[opp_infoset].keys())
             probs = [self.strategy[opp_infoset][a] for a in actions]

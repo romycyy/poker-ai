@@ -199,7 +199,10 @@ class Player:
 
     def get_total_bet(self):
         return self.total_bet
-    
+
+    def get_pos(self):
+        return self.pos
+
     def initialized(self):
         self.on_board = True
         self.has_acted = False
